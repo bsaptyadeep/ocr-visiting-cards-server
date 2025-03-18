@@ -3,17 +3,17 @@ from PIL import Image
 import cloudinary
 import cloudinary.uploader
 from io import BytesIO
-import pytesseract
 from dotenv import load_dotenv
 import os
-
-# Set Tesseract path explicitly
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+import easyocr
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI()
+
+# Initialize EasyOCR reader (supports multiple languages, e.g., 'en' for English)
+reader = easyocr.Reader(['en'])
 
 # Configure Cloudinary
 cloudinary.config(
@@ -22,11 +22,6 @@ cloudinary.config(
     api_secret = os.getenv("CLOUDINARY_API_SECRET"), # Click 'View API Keys' above to copy your API secret
     secure=True
 )
-
-def extract_text_from_image(image_path):
-    image = Image.open(image_path)
-    text = pytesseract.image_to_string(image)
-    return text
 
 @app.get("/")
 async def read_root():
@@ -57,22 +52,21 @@ async def upload_image(file: UploadFile = File(...)):
                 right = left + grid_width
                 lower = upper + grid_height
                 cropped_img = image.crop((left, upper, right, lower))
-                
-                extracted_text = pytesseract.image_to_string(cropped_img).strip()
-
 
                 # Save to bytes
                 img_bytes = BytesIO()
                 cropped_img.save(img_bytes, format="PNG")
                 img_bytes.seek(0)
-
+                
+                # OCR Processing
+                ocr_result = reader.readtext(img_bytes.getvalue(), detail=0)
                 # Upload to Cloudinary
                 response = cloudinary.uploader.upload(img_bytes, folder="image_slices/")
 
                 # Collect URL
                 uploaded_urls.append({
                     "url": response.get("secure_url"),
-                    "ocr-metadata": extracted_text
+                    "ocr-metadata": ocr_result
                 })
 
         return {"image_urls": uploaded_urls}
